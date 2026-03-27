@@ -1,10 +1,8 @@
 import os
-import requests
-import json
 import streamlit as st
 from litellm import completion
 
-# --- 1. PAGE SETUP & DESIGN ---
+# --- 1. WARM & WELCOMING DESIGN ---
 st.set_page_config(page_title="Vedic AI Astrologer", page_icon="🪔", layout="wide")
 
 st.markdown("""
@@ -30,69 +28,40 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SECRETS & API SETUP ---
+# --- 2. API SETUP ---
+# We only need Gemini now. No more third-party math APIs to crash!
 os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
-ASTRO_USER_ID = st.secrets.get("ASTRO_USER_ID", "YOUR_USER_ID")
-ASTRO_API_KEY = st.secrets.get("ASTRO_API_KEY", "YOUR_API_KEY")
 
 # --- 3. MEMORY SETUP ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "math_data" not in st.session_state:
-    st.session_state.math_data = None
+if "verified_chart" not in st.session_state:
+    st.session_state.verified_chart = None
 
-# --- 4. THE MATH LAYER (API CALL) ---
-def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
-    url = "https://json.astrologyapi.com/v1/astro_details"
-    data = {
-        "day": day, "month": month, "year": year,
-        "hour": hour, "min": minute, "lat": lat, "lon": lon, "tzone": tzone
-    }
-    try:
-       # We wrap the ID and Key in str() to guarantee they are sent as text passwords
-response = requests.post(url, auth=(str(ASTRO_USER_ID), str(ASTRO_API_KEY)), data=data):
-            return response.json()
-        else:
-            return {"error": f"API Error {response.status_code}: {response.text}"}
-    except Exception as e:
-        return {"error": str(e)}
-
-# --- 5. THE SIDEBAR ---
+# --- 4. THE SIDEBAR (FOOLPROOF INPUTS) ---
 with st.sidebar:
-    st.header("✨ Your Birth Details")
-    st.write("Enter exact details for mathematical precision.")
+    st.header("✨ Your Core Signs")
+    st.write("Select your placements below to lock in an accurate reading and prevent AI guesswork.")
     
-    # We use numerical inputs to prevent the math API from crashing
-    col1, col2, col3 = st.columns(3)
-    with col1: day = st.number_input("Day", min_value=1, max_value=31, value=15)
-    with col2: month = st.number_input("Month", min_value=1, max_value=12, value=8)
-    with col3: year = st.number_input("Year", min_value=1900, max_value=2100, value=1992)
+    zodiac_signs = [
+        "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", 
+        "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
+    ]
     
-    col4, col5 = st.columns(2)
-    with col4: hour = st.number_input("Hour (0-23)", min_value=0, max_value=23, value=8)
-    with col5: minute = st.number_input("Minute", min_value=0, max_value=59, value=15)
+    ascendant = st.selectbox("Lagna (Ascendant)", zodiac_signs)
+    moon_sign = st.selectbox("Rashi (Moon Sign)", zodiac_signs)
+    sun_sign = st.selectbox("Sun Sign", zodiac_signs)
     
-    st.write("Location Coordinates ([Find Here](https://www.latlong.net/))")
-    col6, col7 = st.columns(2)
-    with col6: lat = st.number_input("Latitude", value=26.9124) # Default set to Jaipur
-    with col7: lon = st.number_input("Longitude", value=75.7873)
-    tzone = st.number_input("Timezone", value=5.5) # 5.5 is standard for IST
-    
-    if st.button("Save Details & Generate Chart"):
-        with st.spinner("Calculating exact planetary positions..."):
-            math_result = get_astrology_data(day, month, year, hour, minute, lat, lon, tzone)
-            
-            if "error" in math_result:
-                st.error(f"Math API Failed: {math_result['error']}")
-            else:
-                st.session_state.math_data = math_result
-                st.success("Mathematical chart saved!")
-                
-                # Ask Gemini to welcome the user using the accurate data
-                st.session_state.messages.append({
-                    "role": "user", 
-                    "content": "Hello! I have saved my birth details. Please show me a brief, beautifully formatted summary of my exact Ascendant, Moon sign, and Sun sign based on the mathematical data provided."
-                })
+    if st.button("Save Details & Start Chat"):
+        # Save the exact signs to the app's memory
+        st.session_state.verified_chart = f"Ascendant: {ascendant}, Moon Sign: {moon_sign}, Sun Sign: {sun_sign}"
+        st.success("Signs saved securely!")
+        
+        # Automatically start the conversation
+        st.session_state.messages.append({
+            "role": "user", 
+            "content": "Hello! I have saved my signs. Please give me a warm welcome and a brief summary of my core personality based on these 3 signs."
+        })
 
     st.divider()
     st.subheader("🔮 Ask About...")
@@ -104,41 +73,45 @@ with st.sidebar:
     
     for topic in topics:
         if st.button(topic):
-            if st.session_state.math_data:
+            if st.session_state.verified_chart:
                 st.session_state.messages.append({
                     "role": "user", 
-                    "content": f"Based strictly on my verified chart data, tell me about my {topic}."
+                    "content": f"Based strictly on my verified signs ({st.session_state.verified_chart}), tell me about my {topic}."
                 })
             else:
-                st.warning("Please save your birth details first!")
+                st.warning("Please click 'Save Details' first!")
 
-# --- 6. THE MAIN CHAT INTERFACE ---
+# --- 5. THE MAIN CHAT INTERFACE ---
 st.title("🪔 Your Personal Astrologer")
-st.write("Welcome! Save your details to lock in your mathematical chart, then ask me anything.")
+st.write("Welcome! Save your signs in the sidebar to lock in your chart, then ask me anything or use the quick buttons.")
 
+# Display chat history
 for msg in st.session_state.messages:
     if msg["role"] != "system":
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+# Handle text box input at the bottom
 if user_input := st.chat_input("Ask a specific question about your chart..."):
-    if st.session_state.math_data:
+    if st.session_state.verified_chart:
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
     else:
-        st.error("Please save your birth details in the sidebar first!")
+        st.error("Please save your details in the sidebar first!")
 
-# --- 7. THE AI LAYER (INTERPRETER) ---
+# --- 6. THE AI LAYER (INTERPRETER) ---
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     with st.chat_message("assistant"):
         with st.spinner("Consulting the stars..."):
             
-            # THE MAGIC: We inject the hard math directly into the AI's brain behind the scenes
+            # THE MAGIC: We force Gemini to only look at the exact signs the user picked
             system_context = f"""
             You are a warm, empathetic, and highly accurate Vedic astrologer. 
-            Do NOT hallucinate planetary positions. Base all your answers STRICTLY on this mathematical data:
-            {json.dumps(st.session_state.math_data)}
+            Do NOT hallucinate or guess planetary positions. 
+            Base all your answers STRICTLY on these known facts about the user: 
+            {st.session_state.verified_chart}
+            If you need more info to answer a question (like exact degrees or house placements), politely explain that you are giving a general reading based on their core signs.
             """
             
             api_messages = [{"role": "system", "content": system_context}]
