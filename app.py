@@ -49,8 +49,8 @@ def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
         "hour": hour, "min": minute, "lat": lat, "lon": lon, "tzone": tzone
     }
     try:
-        response = requests.post(url, auth=(ASTRO_USER_ID, ASTRO_API_KEY), data=data)
-        if response.status_code == 200:
+       # We wrap the ID and Key in str() to guarantee they are sent as text passwords
+response = requests.post(url, auth=(str(ASTRO_USER_ID), str(ASTRO_API_KEY)), data=data):
             return response.json()
         else:
             return {"error": f"API Error {response.status_code}: {response.text}"}
