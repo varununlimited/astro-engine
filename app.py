@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import datetime
 import streamlit as st
 from litellm import completion
 
@@ -32,7 +33,6 @@ st.markdown("""
 
 # --- 2. SECRETS SETUP ---
 os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
-# We no longer pull a User ID, only the new API Key
 ASTRO_API_KEY = st.secrets.get("ASTRO_API_KEY", "YOUR_API_KEY")
 
 # --- 3. MEMORY SETUP ---
@@ -40,24 +40,21 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "math_data" not in st.session_state:
     st.session_state.math_data = None
+if "dob_string" not in st.session_state:
+    st.session_state.dob_string = None
 
 # --- 4. THE MATH LAYER (API CALL) ---
 def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
     url = "https://json.astrologyapi.com/v1/astro_details"
-    
-    # NEW: Passing the API key exactly how the documentation requested
     headers = {
         "x-astrologyapi-key": ASTRO_API_KEY,
         "Content-Type": "application/json"
     }
-    
     data = {
         "day": day, "month": month, "year": year,
         "hour": hour, "min": minute, "lat": lat, "lon": lon, "tzone": tzone
     }
-    
     try:
-        # NEW: Using headers instead of the old auth method
         response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             return response.json()
@@ -82,9 +79,9 @@ with st.sidebar:
     
     st.write("Location Coordinates ([Find Here](https://www.latlong.net/))")
     col6, col7 = st.columns(2)
-    with col6: lat = st.number_input("Latitude", value=26.9124) # Jaipur Default
+    with col6: lat = st.number_input("Latitude", value=26.9124)
     with col7: lon = st.number_input("Longitude", value=75.7873)
-    tzone = st.number_input("Timezone", value=5.5) # IST
+    tzone = st.number_input("Timezone", value=5.5)
     
     if st.button("Save Details & Generate Chart"):
         with st.spinner("Calculating exact planetary positions..."):
@@ -94,11 +91,12 @@ with st.sidebar:
                 st.error(f"Math API Failed: {math_result['error']}")
             else:
                 st.session_state.math_data = math_result
+                st.session_state.dob_string = f"{day}/{month}/{year}" # Saving the exact DOB for the AI
                 st.success("Mathematical chart saved!")
                 
                 st.session_state.messages.append({
                     "role": "user", 
-                    "content": "Hello! I have saved my birth details. Please show me a brief, beautifully formatted summary of my exact Ascendant, Moon sign, and Sun sign based on the mathematical data provided."
+                    "content": "Hello! I have saved my birth details. Please show me a beautifully formatted summary of my exact Ascendant, Moon sign, and Sun sign."
                 })
 
     st.divider()
@@ -141,10 +139,21 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
     with st.chat_message("assistant"):
         with st.spinner("Consulting the stars..."):
             
+            # We grab today's exact date to feed to the AI
+            current_date = datetime.datetime.now().strftime("%B %Y")
+            
+            # The new, smarter instructions
             system_context = f"""
             You are a warm, empathetic, and highly accurate Vedic astrologer. 
-            Do NOT hallucinate planetary positions. Base all your answers STRICTLY on this mathematical data:
+            The user's Date of Birth is: {st.session_state.dob_string}
+            
+            Here is their mathematically verified natal chart data:
             {json.dumps(st.session_state.math_data)}
+            
+            RULES:
+            1. Base their core placements (Ascendant, Moon, Nakshatra) STRICTLY on the JSON data provided.
+            2. If the Sun sign is not explicitly labeled in the JSON, use their Date of Birth to accurately state their Vedic Sun sign.
+            3. The current date is {current_date}. If asked for monthly predictions, life predictions, or transits, you have full permission to use your internal knowledge of current planetary transits and apply them to the user's natal chart. Do not refuse to give predictions.
             """
             
             api_messages = [{"role": "system", "content": system_context}]
