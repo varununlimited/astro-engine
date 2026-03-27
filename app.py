@@ -1,21 +1,16 @@
 import os
+import requests
+import json
 import streamlit as st
 from litellm import completion
 
-# --- 1. WARM & WELCOMING DESIGN ---
+# --- 1. PAGE SETUP & DESIGN ---
 st.set_page_config(page_title="Vedic AI Astrologer", page_icon="🪔", layout="wide")
 
 st.markdown("""
     <style>
-    /* Warm cream background */
     .stApp { background-color: #FFFDF8; }
-    
-    /* Force ALL text to be a dark, readable brown */
-    h1, h2, h3, p, div, span, li, label { 
-        color: #3E2723 !important; 
-    }
-    
-    /* Style the chat bubbles to stand out */
+    h1, h2, h3, p, div, span, li, label { color: #3E2723 !important; }
     [data-testid="stChatMessage"] {
         background-color: #FFF2D7;
         border-radius: 15px;
@@ -23,8 +18,6 @@ st.markdown("""
         margin-bottom: 10px;
         border: 1px solid #F5DEB3;
     }
-    
-    /* Styling the buttons to look like smooth, golden pills */
     .stButton>button { 
         background-color: #D2691E !important; 
         color: white !important; 
@@ -33,45 +26,76 @@ st.markdown("""
         border: none;
         padding: 10px;
     }
-    .stButton>button:hover { 
-        background-color: #A0522D !important; 
-        color: white !important;
-    }
+    .stButton>button:hover { background-color: #A0522D !important; color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. API SETUP & MEMORY ---
+# --- 2. SECRETS & API SETUP ---
 os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+ASTRO_USER_ID = st.secrets.get("ASTRO_USER_ID", "YOUR_USER_ID")
+ASTRO_API_KEY = st.secrets.get("ASTRO_API_KEY", "YOUR_API_KEY")
 
-# Create a memory bank so the chatbot remembers the conversation
+# --- 3. MEMORY SETUP ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "birth_info" not in st.session_state:
-    st.session_state.birth_info = None
+if "math_data" not in st.session_state:
+    st.session_state.math_data = None
 
-# --- 3. THE SIDEBAR (INPUTS & BUTTONS) ---
+# --- 4. THE MATH LAYER (API CALL) ---
+def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
+    url = "https://json.astrologyapi.com/v1/astro_details"
+    data = {
+        "day": day, "month": month, "year": year,
+        "hour": hour, "min": minute, "lat": lat, "lon": lon, "tzone": tzone
+    }
+    try:
+        response = requests.post(url, auth=(ASTRO_USER_ID, ASTRO_API_KEY), data=data)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"error": f"API Error {response.status_code}: {response.text}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- 5. THE SIDEBAR ---
 with st.sidebar:
     st.header("✨ Your Birth Details")
+    st.write("Enter exact details for mathematical precision.")
     
-    dob = st.text_input("Date of Birth", placeholder="15 Aug 1992")
-    time_birth = st.text_input("Time of Birth", placeholder="08:15 AM")
-    place_birth = st.text_input("Place of Birth", placeholder="Jaipur, Rajasthan")
+    # We use numerical inputs to prevent the math API from crashing
+    col1, col2, col3 = st.columns(3)
+    with col1: day = st.number_input("Day", min_value=1, max_value=31, value=15)
+    with col2: month = st.number_input("Month", min_value=1, max_value=12, value=8)
+    with col3: year = st.number_input("Year", min_value=1900, max_value=2100, value=1992)
+    
+    col4, col5 = st.columns(2)
+    with col4: hour = st.number_input("Hour (0-23)", min_value=0, max_value=23, value=8)
+    with col5: minute = st.number_input("Minute", min_value=0, max_value=59, value=15)
+    
+    st.write("Location Coordinates ([Find Here](https://www.latlong.net/))")
+    col6, col7 = st.columns(2)
+    with col6: lat = st.number_input("Latitude", value=26.9124) # Default set to Jaipur
+    with col7: lon = st.number_input("Longitude", value=75.7873)
+    tzone = st.number_input("Timezone", value=5.5) # 5.5 is standard for IST
     
     if st.button("Save Details & Generate Chart"):
-        if dob and time_birth and place_birth:
-            st.session_state.birth_info = f"DOB: {dob}, Time: {time_birth}, Place: {place_birth}"
-            # Automatically ask the AI for the basic chart
-            st.session_state.messages.append({
-                "role": "user", 
-                "content": "Hello! Please show me a formatted table of my basic birth chart (Ascendant, Sun, Moon, etc.)."
-            })
-        else:
-            st.warning("Please enter all birth details first.")
+        with st.spinner("Calculating exact planetary positions..."):
+            math_result = get_astrology_data(day, month, year, hour, minute, lat, lon, tzone)
+            
+            if "error" in math_result:
+                st.error(f"Math API Failed: {math_result['error']}")
+            else:
+                st.session_state.math_data = math_result
+                st.success("Mathematical chart saved!")
+                
+                # Ask Gemini to welcome the user using the accurate data
+                st.session_state.messages.append({
+                    "role": "user", 
+                    "content": "Hello! I have saved my birth details. Please show me a brief, beautifully formatted summary of my exact Ascendant, Moon sign, and Sun sign based on the mathematical data provided."
+                })
 
     st.divider()
     st.subheader("🔮 Ask About...")
-    
-    # Quick action buttons for the user
     topics = [
         "Life Predictions", "Monthly Predictions", "Yogas & Doshas", 
         "Baby Names by Rashi", "Mahadasha Chart", "Career", 
@@ -80,40 +104,43 @@ with st.sidebar:
     
     for topic in topics:
         if st.button(topic):
-            if st.session_state.birth_info:
+            if st.session_state.math_data:
                 st.session_state.messages.append({
                     "role": "user", 
-                    "content": f"Based on my chart, tell me about my {topic}."
+                    "content": f"Based strictly on my verified chart data, tell me about my {topic}."
                 })
             else:
                 st.warning("Please save your birth details first!")
 
-# --- 4. THE MAIN CHAT INTERFACE ---
+# --- 6. THE MAIN CHAT INTERFACE ---
 st.title("🪔 Your Personal Astrologer")
-st.write("Welcome! Save your details in the sidebar to reveal your chart, then ask me anything or use the quick buttons.")
+st.write("Welcome! Save your details to lock in your mathematical chart, then ask me anything.")
 
-# Display all chat messages on the screen
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    if msg["role"] != "system":
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
 
-# Handle custom questions typed into the bottom chat box
 if user_input := st.chat_input("Ask a specific question about your chart..."):
-    if st.session_state.birth_info:
+    if st.session_state.math_data:
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
     else:
         st.error("Please save your birth details in the sidebar first!")
 
-# --- 5. GENERATE AI RESPONSE ---
-# If the last message in memory is from the user, the AI needs to reply
+# --- 7. THE AI LAYER (INTERPRETER) ---
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     with st.chat_message("assistant"):
         with st.spinner("Consulting the stars..."):
             
-            # Package the birth info and chat history for the AI
-            system_context = f"You are a warm, empathetic expert in Vedic astrology. The user's birth data is: {st.session_state.birth_info}."
+            # THE MAGIC: We inject the hard math directly into the AI's brain behind the scenes
+            system_context = f"""
+            You are a warm, empathetic, and highly accurate Vedic astrologer. 
+            Do NOT hallucinate planetary positions. Base all your answers STRICTLY on this mathematical data:
+            {json.dumps(st.session_state.math_data)}
+            """
+            
             api_messages = [{"role": "system", "content": system_context}]
             api_messages.extend(st.session_state.messages) 
             
@@ -124,8 +151,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 )
                 ai_reply = response.choices[0].message.content
                 st.markdown(ai_reply)
-                
-                # Save the reply to memory
                 st.session_state.messages.append({"role": "assistant", "content": ai_reply})
             except Exception as e:
                 st.error(f"Connection Error: {e}")
