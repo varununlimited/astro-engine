@@ -43,9 +43,9 @@ if "math_data" not in st.session_state:
 if "dob_string" not in st.session_state:
     st.session_state.dob_string = None
 
-# --- 4. THE MATH LAYER (API CALL) ---
+# --- 4. UPGRADED: DEEP MATH LAYER (THE BIG FOUR CHARTS) ---
 def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
-    url = "https://json.astrologyapi.com/v1/astro_details"
+    """Fetches D1, D9, D10, and D7 charts for deep AI analysis"""
     headers = {
         "x-astrologyapi-key": ASTRO_API_KEY,
         "Content-Type": "application/json"
@@ -54,12 +54,25 @@ def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
         "day": day, "month": month, "year": year,
         "hour": hour, "min": minute, "lat": lat, "lon": lon, "tzone": tzone
     }
+    
     try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"error": f"API Error {response.status_code}: {response.text}"}
+        # 1. The Foundations
+        basic_res = requests.post("https://json.astrologyapi.com/v1/astro_details", headers=headers, json=data).json()
+        planets_res = requests.post("https://json.astrologyapi.com/v1/planets", headers=headers, json=data).json()
+        
+        # 2. The Deep Divisional Charts
+        d9_res = requests.post("https://json.astrologyapi.com/v1/horo_chart_info/D9", headers=headers, json=data).json()
+        d10_res = requests.post("https://json.astrologyapi.com/v1/horo_chart_info/D10", headers=headers, json=data).json()
+        d7_res = requests.post("https://json.astrologyapi.com/v1/horo_chart_info/D7", headers=headers, json=data).json()
+        
+        # Package everything into one master dictionary for Gemini
+        return {
+            "basic_details": basic_res,
+            "d1_planetary_placements": planets_res,
+            "d9_marriage_and_soul": d9_res,
+            "d10_career_and_business": d10_res,
+            "d7_children_and_creativity": d7_res
+        }
     except Exception as e:
         return {"error": str(e)}
 
