@@ -30,9 +30,9 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 2. SECRETS & API SETUP ---
+# --- 2. SECRETS SETUP ---
 os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
-ASTRO_USER_ID = st.secrets.get("ASTRO_USER_ID", "YOUR_USER_ID")
+# We no longer pull a User ID, only the new API Key
 ASTRO_API_KEY = st.secrets.get("ASTRO_API_KEY", "YOUR_API_KEY")
 
 # --- 3. MEMORY SETUP ---
@@ -44,13 +44,21 @@ if "math_data" not in st.session_state:
 # --- 4. THE MATH LAYER (API CALL) ---
 def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
     url = "https://json.astrologyapi.com/v1/astro_details"
+    
+    # NEW: Passing the API key exactly how the documentation requested
+    headers = {
+        "x-astrologyapi-key": ASTRO_API_KEY,
+        "Content-Type": "application/json"
+    }
+    
     data = {
         "day": day, "month": month, "year": year,
         "hour": hour, "min": minute, "lat": lat, "lon": lon, "tzone": tzone
     }
+    
     try:
-        # The str() wrapper forces the credentials to be sent as text, preventing 401 errors
-        response = requests.post(url, auth=(str(ASTRO_USER_ID), str(ASTRO_API_KEY)), data=data)
+        # NEW: Using headers instead of the old auth method
+        response = requests.post(url, headers=headers, json=data)
         if response.status_code == 200:
             return response.json()
         else:
@@ -133,7 +141,6 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
     with st.chat_message("assistant"):
         with st.spinner("Consulting the stars..."):
             
-            # THE MAGIC: Injecting the hard math directly into the AI's brain behind the scenes
             system_context = f"""
             You are a warm, empathetic, and highly accurate Vedic astrologer. 
             Do NOT hallucinate planetary positions. Base all your answers STRICTLY on this mathematical data:
