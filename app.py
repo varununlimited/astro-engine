@@ -43,7 +43,24 @@ if "math_data" not in st.session_state:
 if "dob_string" not in st.session_state:
     st.session_state.dob_string = None
 
-# --- 4. UPGRADED: DEEP MATH LAYER (THE BIG FOUR CHARTS) ---
+# --- 4. NEW: AUTO-LOCATION (GEOCODING) ---
+def get_coordinates(city_name):
+    """Translates a city name into Latitude and Longitude using OpenStreetMap."""
+    try:
+        url = f"https://nominatim.openstreetmap.org/search?q={city_name}&format=json&limit=1"
+        # We must include a User-Agent so they know who is pinging their free server
+        headers = {"User-Agent": "VedicAIAstrologerApp/1.0"}
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200 and len(response.json()) > 0:
+            data = response.json()[0]
+            return float(data["lat"]), float(data["lon"])
+        else:
+            return None, None
+    except Exception:
+        return None, None
+
+# --- 5. UPGRADED: DEEP MATH LAYER (THE BIG FOUR CHARTS) ---
 def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
     """Fetches D1, D9, D10, and D7 charts for deep AI analysis"""
     headers = {
@@ -75,11 +92,9 @@ def get_astrology_data(day, month, year, hour, minute, lat, lon, tzone):
         }
     except Exception as e:
         return {"error": str(e)}
-
-# --- 5. THE SIDEBAR ---
+# --- 6. THE SIDEBAR (NOW WITH CITY SEARCH) ---
 with st.sidebar:
     st.header("✨ Your Birth Details")
-    st.write("Enter exact details for mathematical precision.")
     
     col1, col2, col3 = st.columns(3)
     with col1: day = st.number_input("Day", min_value=1, max_value=31, value=15)
@@ -90,27 +105,35 @@ with st.sidebar:
     with col4: hour = st.number_input("Hour (0-23)", min_value=0, max_value=23, value=8)
     with col5: minute = st.number_input("Minute", min_value=0, max_value=59, value=15)
     
-    st.write("Location Coordinates ([Find Here](https://www.latlong.net/))")
-    col6, col7 = st.columns(2)
-    with col6: lat = st.number_input("Latitude", value=26.9124)
-    with col7: lon = st.number_input("Longitude", value=75.7873)
-    tzone = st.number_input("Timezone", value=5.5)
+    # NEW: Simple text box instead of Latitude/Longitude math
+    city_input = st.text_input("Birth City & State", placeholder="Jaipur, Rajasthan")
+    tzone = st.number_input("Timezone (e.g., 5.5 for India)", value=5.5)
     
     if st.button("Save Details & Generate Chart"):
-        with st.spinner("Calculating exact planetary positions..."):
-            math_result = get_astrology_data(day, month, year, hour, minute, lat, lon, tzone)
-            
-            if "error" in math_result:
-                st.error(f"Math API Failed: {math_result['error']}")
-            else:
-                st.session_state.math_data = math_result
-                st.session_state.dob_string = f"{day}/{month}/{year}" # Saving the exact DOB for the AI
-                st.success("Mathematical chart saved!")
+        if not city_input:
+            st.warning("Please enter a city name.")
+        else:
+            with st.spinner("Finding coordinates & drawing deep charts..."):
+                # 1. Translate the city to GPS coordinates
+                lat, lon = get_coordinates(city_input)
                 
-                st.session_state.messages.append({
-                    "role": "user", 
-                    "content": "Hello! I have saved my birth details. Please show me a beautifully formatted summary of my exact Ascendant, Moon sign, and Sun sign."
-                })
+                if lat is None:
+                    st.error("Could not find coordinates for that city. Please try adding the state or country.")
+                else:
+                    # 2. Fetch the D1 and D9 math using the newly found coordinates
+                    math_result = get_astrology_data(day, month, year, hour, minute, lat, lon, tzone)
+                    
+                    if "error" in math_result:
+                        st.error(f"Math API Failed: {math_result['error']}")
+                    else:
+                        st.session_state.math_data = math_result
+                        st.session_state.dob_string = f"{day}/{month}/{year}"
+                        st.success(f"Location found! ({lat}, {lon}). Deep chart saved!")
+                        
+                        st.session_state.messages.append({
+                            "role": "user", 
+                            "content": "Hello! I have saved my birth details. Please show me a beautifully formatted summary of my Ascendant, Moon sign, Sun sign, and one interesting fact you notice in my D-9 Navamsha chart."
+                        })
 
     st.divider()
     st.subheader("🔮 Ask About...")
@@ -125,14 +148,14 @@ with st.sidebar:
             if st.session_state.math_data:
                 st.session_state.messages.append({
                     "role": "user", 
-                    "content": f"Based strictly on my verified chart data, tell me about my {topic}."
+                    "content": f"Based strictly on my verified D1 and Navamsha chart data, tell me about my {topic}. Please reference specific planets or houses if relevant."
                 })
             else:
                 st.warning("Please save your birth details first!")
 
-# --- 6. THE MAIN CHAT INTERFACE ---
+# --- 7. THE MAIN CHAT INTERFACE ---
 st.title("🪔 Your Personal Astrologer")
-st.write("Welcome! Save your details to lock in your mathematical chart, then ask me anything.")
+st.write("Welcome! Save your details to lock in your D1 and D9 charts, then ask me anything.")
 
 for msg in st.session_state.messages:
     if msg["role"] != "system":
@@ -147,26 +170,25 @@ if user_input := st.chat_input("Ask a specific question about your chart..."):
     else:
         st.error("Please save your birth details in the sidebar first!")
 
-# --- 7. THE AI LAYER (INTERPRETER) ---
+# --- 8. THE AI LAYER (INTERPRETER) ---
 if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
     with st.chat_message("assistant"):
         with st.spinner("Consulting the stars..."):
             
-            # We grab today's exact date to feed to the AI
             current_date = datetime.datetime.now().strftime("%B %Y")
             
-            # The new, smarter instructions
+            # The AI prompt is now aware it has access to both D1 and D9
             system_context = f"""
             You are a warm, empathetic, and highly accurate Vedic astrologer. 
             The user's Date of Birth is: {st.session_state.dob_string}
             
-            Here is their mathematically verified natal chart data:
+            Here is their complete, mathematically verified astrological data (including D1 planets and D9 Navamsha houses):
             {json.dumps(st.session_state.math_data)}
             
             RULES:
-            1. Base their core placements (Ascendant, Moon, Nakshatra) STRICTLY on the JSON data provided.
-            2. If the Sun sign is not explicitly labeled in the JSON, use their Date of Birth to accurately state their Vedic Sun sign.
-            3. The current date is {current_date}. If asked for monthly predictions, life predictions, or transits, you have full permission to use your internal knowledge of current planetary transits and apply them to the user's natal chart. Do not refuse to give predictions.
+            1. Base their core placements strictly on the JSON data provided.
+            2. You now have access to their Navamsha (D9) chart data. Use it to provide deeper insights, especially for questions about marriage, soul purpose, or hidden strengths.
+            3. The current date is {current_date}. If asked for predictions, use your internal knowledge of current planetary transits.
             """
             
             api_messages = [{"role": "system", "content": system_context}]
